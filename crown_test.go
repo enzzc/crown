@@ -1,4 +1,4 @@
-package horloger
+package crown
 
 import (
 	"sync"
