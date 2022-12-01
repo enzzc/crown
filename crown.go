@@ -1,6 +1,8 @@
 package crown
 
 import (
+	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -13,6 +15,11 @@ type Clock struct {
 	tick       sync.Cond
 	current    time.Time
 	sleepCount int32 // For testing purposes
+}
+
+type Timer struct {
+	C      <-chan time.Time
+	cancel func()
 }
 
 func (c *Clock) GetSleepCount() int32 {
@@ -45,11 +52,46 @@ func (c *Clock) Forward(d time.Duration) {
 // Sleep returns when the clock has reached its curent time + the specified
 // duration d.
 func (c *Clock) Sleep(d time.Duration) {
+	c.SleepWithContext(context.Background(), d)
+}
+
+func (c *Clock) SleepWithContext(ctx context.Context, d time.Duration) error {
 	atomic.AddInt32(&c.sleepCount, 1)
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	deadline := c.current.Add(d)
+	condVarWait := make(chan struct{})
+	defer close(condVarWait)
 	for c.current.Before(deadline) { // c.current is locked here
-		c.tick.Wait()
+		go func() {
+			c.tick.Wait()
+			condVarWait <- struct{}{}
+		}()
+		select {
+		case <-condVarWait:
+		case <-ctx.Done():
+			// Bypass c.mu.Unlock() here
+			return errors.New("Canceled")
+		}
 	}
+	c.mu.Unlock()
+	return nil
+}
+
+// NewTimer creates a new clock-associated Timer that will send the current
+// time on its channel after at least duration d.
+func (c *Clock) NewTimer(d time.Duration) *Timer {
+	_, cancel := context.WithCancel(context.Background())
+	ch := make(chan time.Time, 1)
+	go func() {
+		c.Sleep(d)
+		ch <- c.Now()
+	}()
+	return &Timer{
+		C:      ch,
+		cancel: cancel,
+	}
+}
+
+func (t *Timer) Stop() bool {
+	return true
 }

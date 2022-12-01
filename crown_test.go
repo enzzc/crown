@@ -1,6 +1,8 @@
 package crown
 
 import (
+	"context"
+	"sync"
 	"testing"
 	"time"
 )
@@ -81,5 +83,86 @@ func TestSleep(t *testing.T) {
 		t.Log("Sleeper 1 returned.", clock.Now())
 	case <-time.After(1 * time.Second):
 		t.Fatalf("Sleeper 1 did not return after clock has reached t+6s. t=%q", clock.Now())
+	}
+}
+
+func TestTimer(t *testing.T) {
+	refT, _ := time.Parse(time.RFC3339, "2022-12-01T09:00:00Z")
+	clock := NewClock(refT)
+	delta := 42 * time.Second
+	target := refT.Add(delta)
+
+	timer := clock.NewTimer(delta)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		select {
+		case <-timer.C:
+		case <-time.After(time.Second):
+			t.Fatalf("Did not return. t=%q", clock.Now())
+		}
+		now := clock.Now()
+		if now.Before(target) {
+			t.Errorf("Timer returned before target time %q. t=%q", target, now)
+		}
+	}()
+
+	// Wait for timer to be ready (retry=5)
+	for try := 1; ; try++ {
+		c := clock.GetSleepCount()
+		if c == 1 {
+			break
+		}
+		if c != 1 && try == 5 {
+			t.Fatalf("Retry=5 times to wait for timer to be ready")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	clock.Forward(delta)
+	wg.Wait()
+}
+
+func TestSleepWithContext(t *testing.T) {
+	refT, _ := time.Parse(time.RFC3339, "2022-12-01T09:00:00Z")
+	clock := NewClock(refT)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan struct{})
+
+	// Sleeper
+	go func() {
+		defer func() { done <- struct{}{} }()
+		err := clock.SleepWithContext(ctx, 42*time.Second)
+		if err == nil {
+			t.Errorf("Expected Canceled error here")
+			return
+		}
+		now := clock.Now()
+		if !now.Equal(refT) {
+			t.Errorf("SleepWithContext must return with %q=%q", now, refT)
+		}
+	}()
+
+	// Wait for sleeper to be ready (retry=5)
+	for try := 1; ; try++ {
+		c := clock.GetSleepCount()
+		if c == 1 {
+			break
+		}
+		if c != 1 && try == 5 {
+			t.Fatalf("Retry=5 times to wait for timer to be ready")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Errorf("Did not return after 1 sec")
 	}
 }
