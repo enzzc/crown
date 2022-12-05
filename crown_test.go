@@ -72,7 +72,6 @@ func TestSleep(t *testing.T) {
 	clock.Forward(1 * time.Second) // +4 secs
 	select {
 	case <-done2:
-		t.Log("Sleeper 2 returned.", clock.Now())
 	case <-time.After(1 * time.Second):
 		t.Fatalf("Sleeper 2 did not return after clock has reached t+4s. t=%q", clock.Now())
 	}
@@ -80,7 +79,6 @@ func TestSleep(t *testing.T) {
 	clock.Forward(1 * time.Second) // +6 secs
 	select {
 	case <-done1:
-		t.Log("Sleeper 1 returned.", clock.Now())
 	case <-time.After(1 * time.Second):
 		t.Fatalf("Sleeper 1 did not return after clock has reached t+6s. t=%q", clock.Now())
 	}
@@ -236,6 +234,5 @@ func TestConcurrentSleepers(t *testing.T) {
 	clock.Forward(20 * time.Second)
 	clock.Forward(1 * time.Second) // Total = 42 secs
 
-	t.Log("Waiting")
 	wg.Wait()
 }
