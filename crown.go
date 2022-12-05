@@ -85,10 +85,14 @@ func (c *Clock) SleepWithContext(ctx context.Context, d time.Duration) error {
 // NewTimer creates a new clock-associated Timer that will send the current
 // time on its channel after at least duration d.
 func (c *Clock) NewTimer(d time.Duration) *Timer {
-	_, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan time.Time, 1)
 	go func() {
-		c.Sleep(d)
+		defer close(ch)
+		err := c.SleepWithContext(ctx, d)
+		if err != nil {
+			return
+		}
 		ch <- c.Now()
 	}()
 	return &Timer{
@@ -98,5 +102,6 @@ func (c *Clock) NewTimer(d time.Duration) *Timer {
 }
 
 func (t *Timer) Stop() bool {
+	t.cancel()
 	return true
 }

@@ -125,6 +125,43 @@ func TestTimer(t *testing.T) {
 	wg.Wait()
 }
 
+func TestTimerStop(t *testing.T) {
+	refT, _ := time.Parse(time.RFC3339, "2022-12-06T09:00:00Z")
+	clock := NewClock(refT)
+	timer := clock.NewTimer(42 * time.Second)
+
+	done := make(chan struct{}, 1)
+	defer close(done)
+	go func() {
+		var ok bool
+		select {
+		case _, ok = <-timer.C:
+		case <-time.After(time.Second):
+			t.Fatalf("Did not return after 1 sec")
+		}
+		if ok {
+			t.Error("Timer has been fired despite Stop() call.", ok)
+		}
+		done <- struct{}{}
+	}()
+
+	// Wait for timer to be ready (retry=5)
+	for try := 1; ; try++ {
+		c := clock.GetSleepCount()
+		if c == 1 {
+			break
+		}
+		if c != 1 && try == 5 {
+			t.Fatalf("Retry=5 times to wait for timer to be ready")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	timer.Stop()
+	clock.Forward(43 * time.Second)
+	<-done
+}
+
 func TestSleepWithContext(t *testing.T) {
 	refT, _ := time.Parse(time.RFC3339, "2022-12-01T09:00:00Z")
 	clock := NewClock(refT)
