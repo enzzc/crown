@@ -64,6 +64,11 @@ func (c *Clock) SleepWithContext(ctx context.Context, d time.Duration) error {
 	for c.current.Before(deadline) { // c.current is locked here
 		go func() {
 			c.tick.Wait()
+			select {
+			case <-ctx.Done():
+				return // Return before attempting sending on closed channel
+			default:
+			}
 			condVarWait <- struct{}{}
 		}()
 		select {
