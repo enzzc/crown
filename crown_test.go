@@ -166,3 +166,39 @@ func TestSleepWithContext(t *testing.T) {
 		t.Errorf("Did not return after 1 sec")
 	}
 }
+
+func TestConcurrentSleepers(t *testing.T) {
+	refT, _ := time.Parse(time.RFC3339, "2022-12-05T09:00:00Z")
+	clock := NewClock(refT)
+
+	N := 100
+
+	var wg sync.WaitGroup
+	wg.Add(N)
+	for i := 0; i < N; i++ {
+		go func() {
+			defer wg.Done()
+			clock.Sleep(42 * time.Second)
+		}()
+	}
+
+	// Wait for sleepers to be ready (retry=50)
+	for try := 1; ; try++ {
+		c := int(clock.GetSleepCount())
+		if c == N {
+			break
+		}
+		if c != N && try == 50 {
+			t.Fatalf("Retry=50 times to wait for timer to be ready")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	clock.Forward(1 * time.Second)
+	clock.Forward(20 * time.Second)
+	clock.Forward(20 * time.Second)
+	clock.Forward(1 * time.Second) // Total = 42 secs
+
+	t.Log("Waiting")
+	wg.Wait()
+}
