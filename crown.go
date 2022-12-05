@@ -56,11 +56,11 @@ func (c *Clock) Sleep(d time.Duration) {
 }
 
 func (c *Clock) SleepWithContext(ctx context.Context, d time.Duration) error {
-	atomic.AddInt32(&c.sleepCount, 1)
 	c.mu.Lock()
 	deadline := c.current.Add(d)
 	condVarWait := make(chan struct{})
 	defer close(condVarWait)
+	atomic.AddInt32(&c.sleepCount, 1)
 	for c.current.Before(deadline) { // c.current is locked here
 		go func() {
 			c.tick.Wait()
