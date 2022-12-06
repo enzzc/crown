@@ -9,12 +9,13 @@ import (
 )
 
 // Clock represents a controllable clock. The function NewClock returns a new
-// one, so there is no need to initialize Clock directly.
+// one, so there is no need to initialize Clock directly. A Clock object must
+// not be copied.
 type Clock struct {
 	mu         sync.RWMutex
-	tick       sync.Cond
 	current    time.Time
-	sleepCount int32 // For testing purposes
+	handlers   sync.Map
+	sleepCount int32
 }
 
 type Timer struct {
@@ -29,7 +30,6 @@ func (c *Clock) GetSleepCount() int32 {
 // NewClock initializes and returns a new Clock object which starts at time t.
 func NewClock(t time.Time) *Clock {
 	clock := new(Clock)
-	clock.tick.L = &clock.mu
 	clock.current = t
 	return clock
 }
@@ -46,7 +46,12 @@ func (c *Clock) Forward(d time.Duration) {
 	c.mu.Lock()
 	c.current = c.current.Add(d)
 	c.mu.Unlock()
-	c.tick.Broadcast()
+
+	// Broadcast
+	c.handlers.Range(func(key, val any) bool {
+		go func() { val.(chan struct{}) <- struct{}{} }()
+		return true
+	})
 }
 
 // Sleep returns when the clock has reached its curent time + the specified
@@ -56,29 +61,18 @@ func (c *Clock) Sleep(d time.Duration) {
 }
 
 func (c *Clock) SleepWithContext(ctx context.Context, d time.Duration) error {
-	c.mu.Lock()
-	deadline := c.current.Add(d)
-	condVarWait := make(chan struct{})
-	defer close(condVarWait)
-	atomic.AddInt32(&c.sleepCount, 1)
-	for c.current.Before(deadline) { // c.current is locked here
-		go func() {
-			c.tick.Wait()
-			select {
-			case <-ctx.Done():
-				return // Return before attempting sending on closed channel
-			default:
-			}
-			condVarWait <- struct{}{}
-		}()
+	timeChangedNotif := make(chan struct{}, 1)
+	handlerID := atomic.AddInt32(&c.sleepCount, 1)
+	c.handlers.Store(handlerID, timeChangedNotif)
+	defer c.handlers.Delete(handlerID)
+	deadline := c.Now().Add(d)
+	for c.Now().Before(deadline) {
 		select {
-		case <-condVarWait:
+		case <-timeChangedNotif:
 		case <-ctx.Done():
-			// Bypass c.mu.Unlock() here
 			return errors.New("Canceled")
 		}
 	}
-	c.mu.Unlock()
 	return nil
 }
 
