@@ -11,12 +11,11 @@ func waitForSleepers(t *testing.T, clock *Clock, target, maxretry int) {
 	for try := 1; ; try++ {
 		time.Sleep(100 * time.Microsecond)
 		c := int(clock.GetSleepCount())
-		//fmt.Println(c, "/", target, ";", try, "/50")
 		if c == target {
 			break
 		}
 		if c != target && try == maxretry {
-			t.Fatalf("Retry=50 times to wait for timer to be ready")
+			t.Fatalf("Retry=%d times to wait for timer to be ready", maxretry)
 		}
 	}
 }
