@@ -2,7 +2,6 @@ package crown
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,8 +22,9 @@ type Timer struct {
 	cancel func()
 }
 
-func (c *Clock) GetSleepCount() int32 {
-	return atomic.LoadInt32(&c.sleepCount)
+type sleepHandler struct {
+	deadline time.Time
+	c        chan struct{}
 }
 
 // NewClock initializes and returns a new Clock object which starts at time t.
@@ -32,6 +32,10 @@ func NewClock(t time.Time) *Clock {
 	clock := new(Clock)
 	clock.current = t
 	return clock
+}
+
+func (c *Clock) GetSleepCount() int32 {
+	return atomic.LoadInt32(&c.sleepCount)
 }
 
 // Now returns the current clock time.
@@ -48,8 +52,15 @@ func (c *Clock) Forward(d time.Duration) {
 	c.mu.Unlock()
 
 	// Broadcast
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	c.handlers.Range(func(key, val any) bool {
-		go func() { val.(chan struct{}) <- struct{}{} }()
+		handler := val.(*sleepHandler)
+		if c.current.Before(handler.deadline) {
+			return true
+		}
+		close(handler.c)
+		c.handlers.Delete(key)
 		return true
 	})
 }
@@ -61,17 +72,20 @@ func (c *Clock) Sleep(d time.Duration) {
 }
 
 func (c *Clock) SleepWithContext(ctx context.Context, d time.Duration) error {
-	timeChangedNotif := make(chan struct{}, 1)
-	handlerID := atomic.AddInt32(&c.sleepCount, 1)
-	c.handlers.Store(handlerID, timeChangedNotif)
-	defer c.handlers.Delete(handlerID)
 	deadline := c.Now().Add(d)
-	for c.Now().Before(deadline) {
-		select {
-		case <-timeChangedNotif:
-		case <-ctx.Done():
-			return errors.New("Canceled")
-		}
+	handlerID := atomic.AddInt32(&c.sleepCount, 1)
+	ch := make(chan struct{})
+	handler := &sleepHandler{
+		c:        ch,
+		deadline: deadline,
+	}
+	c.handlers.Store(handlerID, handler)
+	select {
+	case <-ctx.Done():
+		//fmt.Println("cancel", c.Now(), "/", deadline)
+		return ctx.Err()
+	case <-ch:
+		//fmt.Println("bye", c.Now(), "/", deadline)
 	}
 	return nil
 }
