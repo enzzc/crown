@@ -82,10 +82,8 @@ func (c *Clock) SleepWithContext(ctx context.Context, d time.Duration) error {
 	c.handlers.Store(handlerID, handler)
 	select {
 	case <-ctx.Done():
-		//fmt.Println("cancel", c.Now(), "/", deadline)
 		return ctx.Err()
 	case <-ch:
-		//fmt.Println("bye", c.Now(), "/", deadline)
 	}
 	return nil
 }
