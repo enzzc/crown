@@ -2,10 +2,24 @@ package crown
 
 import (
 	"context"
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
 )
+
+func waitForSleepers(t *testing.T, clock *Clock, target, maxretry int) {
+	for try := 1; ; try++ {
+		time.Sleep(333 * time.Microsecond)
+		c := int(clock.GetSleepCount())
+		if c == target {
+			break
+		}
+		if c != target && try == maxretry {
+			t.Fatalf("Retry=%d times to wait for timer to be ready", maxretry)
+		}
+	}
+}
 
 func TestClockSet(t *testing.T) {
 	refT, _ := time.Parse(time.RFC3339, "2006-01-02T15:04:05Z")
@@ -47,17 +61,7 @@ func TestSleep(t *testing.T) {
 		done2 <- struct{}{}
 	}()
 
-	// Wait for sleepers to be ready (retry=5)
-	for try := 1; ; try++ {
-		c := clock.GetSleepCount()
-		if c == 2 {
-			break
-		}
-		if c != 2 && try == 5 {
-			t.Fatalf("Retry=5 times to wait for sleepers")
-		}
-		time.Sleep(time.Millisecond)
-	}
+	waitForSleepers(t, clock, 2, 10)
 
 	clock.Forward(1 * time.Second)
 	clock.Forward(1 * time.Second) // +2 secs
@@ -107,17 +111,7 @@ func TestTimer(t *testing.T) {
 		}
 	}()
 
-	// Wait for timer to be ready (retry=5)
-	for try := 1; ; try++ {
-		c := clock.GetSleepCount()
-		if c == 1 {
-			break
-		}
-		if c != 1 && try == 5 {
-			t.Fatalf("Retry=5 times to wait for timer to be ready")
-		}
-		time.Sleep(time.Millisecond)
-	}
+	waitForSleepers(t, clock, 1, 10)
 
 	clock.Forward(delta)
 	wg.Wait()
@@ -128,7 +122,7 @@ func TestTimerStop(t *testing.T) {
 	clock := NewClock(refT)
 	timer := clock.NewTimer(42 * time.Second)
 
-	done := make(chan struct{}, 1)
+	done := make(chan struct{})
 	defer close(done)
 	go func() {
 		var ok bool
@@ -143,17 +137,7 @@ func TestTimerStop(t *testing.T) {
 		done <- struct{}{}
 	}()
 
-	// Wait for timer to be ready (retry=5)
-	for try := 1; ; try++ {
-		c := clock.GetSleepCount()
-		if c == 1 {
-			break
-		}
-		if c != 1 && try == 5 {
-			t.Fatalf("Retry=5 times to wait for timer to be ready")
-		}
-		time.Sleep(time.Millisecond)
-	}
+	waitForSleepers(t, clock, 1, 10)
 
 	timer.Stop()
 	clock.Forward(43 * time.Second)
@@ -169,30 +153,17 @@ func TestSleepWithContext(t *testing.T) {
 
 	// Sleeper
 	go func() {
-		defer func() { done <- struct{}{} }()
 		err := clock.SleepWithContext(ctx, 42*time.Second)
 		if err == nil {
 			t.Errorf("Expected Canceled error here")
 			return
 		}
-		now := clock.Now()
-		if !now.Equal(refT) {
-			t.Errorf("SleepWithContext must return with %q=%q", now, refT)
-		}
+		close(done)
 	}()
 
-	// Wait for sleeper to be ready (retry=5)
-	for try := 1; ; try++ {
-		c := clock.GetSleepCount()
-		if c == 1 {
-			break
-		}
-		if c != 1 && try == 5 {
-			t.Fatalf("Retry=5 times to wait for timer to be ready")
-		}
-		time.Sleep(time.Millisecond)
-	}
+	waitForSleepers(t, clock, 1, 10)
 
+	clock.Forward(20 * time.Second)
 	cancel()
 
 	select {
@@ -213,25 +184,19 @@ func TestConcurrentSleepers(t *testing.T) {
 	for i := 0; i < N; i++ {
 		go func() {
 			defer wg.Done()
-			clock.Sleep(42 * time.Second)
+			rsecs := time.Duration(rand.Intn(41))
+			clock.Sleep(rsecs * time.Second)
 		}()
 	}
 
-	// Wait for sleepers to be ready (retry=50)
-	for try := 1; ; try++ {
-		c := int(clock.GetSleepCount())
-		if c == N {
-			break
-		}
-		if c != N && try == 50 {
-			t.Fatalf("Retry=50 times to wait for timer to be ready")
-		}
-		time.Sleep(time.Millisecond)
-	}
+	waitForSleepers(t, clock, N, 10)
 
 	clock.Forward(1 * time.Second)
-	clock.Forward(20 * time.Second)
-	clock.Forward(20 * time.Second)
+	clock.Forward(5 * time.Second)
+	clock.Forward(5 * time.Second)
+	clock.Forward(10 * time.Second)
+	clock.Forward(15 * time.Second)
+	clock.Forward(5 * time.Second)
 	clock.Forward(1 * time.Second) // Total = 42 secs
 
 	wg.Wait()
