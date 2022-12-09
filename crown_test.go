@@ -52,13 +52,13 @@ func TestSleep(t *testing.T) {
 	// Sleeper 1 (6 secs)
 	go func() {
 		clock.Sleep(6 * time.Second)
-		done1 <- struct{}{}
+		close(done1)
 	}()
 
 	// Sleeper 2 (4 secs)
 	go func() {
 		clock.Sleep(4 * time.Second)
-		done2 <- struct{}{}
+		close(done2)
 	}()
 
 	waitForSleepers(t, clock, 2, 10)
