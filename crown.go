@@ -72,12 +72,11 @@ func (c *Clock) Sleep(d time.Duration) {
 }
 
 func (c *Clock) SleepWithContext(ctx context.Context, d time.Duration) error {
-	deadline := c.Now().Add(d)
 	handlerID := atomic.AddInt32(&c.sleepCount, 1)
 	ch := make(chan struct{})
 	handler := &sleepHandler{
 		c:        ch,
-		deadline: deadline,
+		deadline: c.Now().Add(d),
 	}
 	c.handlers.Store(handlerID, handler)
 	select {
