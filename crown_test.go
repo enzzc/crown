@@ -88,6 +88,40 @@ func TestSleep(t *testing.T) {
 	}
 }
 
+func TestSleepNegative(t *testing.T) {
+	refT, _ := time.Parse(time.RFC3339, "2022-11-25T01:00:00Z")
+	clock := NewClock(refT)
+
+	done := make(chan struct{})
+	go func() {
+		clock.Sleep(-1 * time.Second)
+		close(done)
+	}()
+	waitForSleepers(t, clock, 1, 10)
+	select {
+	case <-done:
+	default:
+		t.Errorf("Should return immediately")
+	}
+}
+
+func TestSleepZero(t *testing.T) {
+	refT, _ := time.Parse(time.RFC3339, "2022-11-25T01:00:00Z")
+	clock := NewClock(refT)
+
+	done := make(chan struct{})
+	go func() {
+		clock.Sleep(0)
+		close(done)
+	}()
+	waitForSleepers(t, clock, 1, 10)
+	select {
+	case <-done:
+	default:
+		t.Errorf("Should return immediately")
+	}
+}
+
 func TestTimer(t *testing.T) {
 	refT, _ := time.Parse(time.RFC3339, "2022-12-01T09:00:00Z")
 	clock := NewClock(refT)

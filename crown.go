@@ -73,6 +73,9 @@ func (c *Clock) Sleep(d time.Duration) {
 
 func (c *Clock) SleepWithContext(ctx context.Context, d time.Duration) error {
 	handlerID := atomic.AddInt32(&c.sleepCount, 1)
+	if d <= 0 {
+		return nil
+	}
 	ch := make(chan struct{})
 	handler := &sleepHandler{
 		c:        ch,
